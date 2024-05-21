@@ -16,7 +16,7 @@ You can install the required packages using pip:
 pip install requests python-telegram-bot==13.7 tqdm
 ```
 
-### Configuration
+### Configuration main.py
 
 1. Obtain a [TELEGRAM BOT TOKEN](https://t.me/BotFather) and paste it into `TELEGRAM_TOKEN`.
 2. Replace `CHAT_ID` with the your [CHAT ID](https://t.me/userinfobot).

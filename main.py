@@ -11,23 +11,25 @@ CHAT_ID = "CHAT_ID"  # Retrieve from environment variable
 PAGE_LIMIT = 10000  # change if you wish
 STATE_FILE = "last_page.txt"
 
+error_count = 0
+
+# --- Functions ---
 
 def read_last_page():
-    """Reads the last scraped page number from the state file."""
+    """Reads the last processed page from the state file."""
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as file:
             return int(file.read().strip())
     return 1
 
-
 def write_last_page(page):
-    """Writes the current page number to the state file."""
+    """Writes the current page to the state file."""
     with open(STATE_FILE, "w") as file:
         file.write(str(page))
 
-
 def search_media(tag: str, bot: Bot, start_page: int):
-    """Searches for media with the given tag and sends them to Telegram."""
+    """Searches for media with a given tag and sends them to Telegram."""
+    global error_count  # Make sure to access the global error_count
     page = start_page
     while True:
         url = f"{API_URL}/posts.json"
@@ -40,7 +42,7 @@ def search_media(tag: str, bot: Bot, start_page: int):
         if response.status_code == 200:
             data = response.json()
             if not data:
-                break
+                break  # Stop if no more data
             bot.send_message(chat_id=CHAT_ID, text=f"Processing page {page}")
             send_to_telegram(bot, data)
             write_last_page(page)
@@ -49,9 +51,9 @@ def search_media(tag: str, bot: Bot, start_page: int):
             print(f"Error: {response.status_code}")
             break
 
-
 def send_to_telegram(bot: Bot, media_list: list):
-    """Sends media items from the list to the Telegram channel."""
+    """Sends a list of media items to the specified Telegram chat."""
+    global error_count
     for media in tqdm(media_list, desc="Sending media"):
         if 'file_url' in media:
             file_url = media['file_url']
@@ -62,15 +64,16 @@ def send_to_telegram(bot: Bot, media_list: list):
                 else:
                     bot.send_photo(chat_id=CHAT_ID, photo=file_url)
             except Exception as e:
-                print(f"Failed to send media: {e}")
-                bot.send_message(chat_id=CHAT_ID,
-                                 text=f"Failed to load media, here is the post link: {post_url}")
+                error_count += 1
+                print(f"Failed to send media: {e}, Error count: {error_count}")
+                bot.send_message(chat_id=CHAT_ID, text=f"Failed to load media: {post_url}, Error count: {error_count}")
         else:
             print("No file_url found in media item")
 
+# --- Telegram Bot Commands ---
 
 def start(update: Update, context: CallbackContext) -> None:
-    """Handles the /start command."""
+    """Handles the /start command, starts a new search."""
     args = context.args
     last_page = read_last_page()
 
@@ -81,36 +84,30 @@ def start(update: Update, context: CallbackContext) -> None:
         return
 
     tag = ' '.join(args)
-    write_last_page(1)  # Reset last page
+    write_last_page(1)  # Reset last page when starting new tag
     search_media(tag, context.bot, 1)
 
-
 def continue_command(update: Update, context: CallbackContext) -> None:
-    """Handles the /continue command."""
+    """Handles the /continue command, resumes from the last page."""
     args = context.args
     if not args:
-        update.message.reply_text(
-            'Please provide a tag. Usage: /continue <tag>')
+        update.message.reply_text('Please provide a tag. Usage: /continue <tag>')
         return
 
     tag = ' '.join(args)
     last_page = read_last_page()
     search_media(tag, context.bot, last_page)
 
+# --- Main ---
 
 def main():
-    """Sets up the Telegram bot and starts polling for updates."""
-    if TELEGRAM_TOKEN is "TELEGRAM_TOKEN" or CHAT_ID is "CHAT_ID":
-        print("Error: TELEGRAM_TOKEN and CHAT_ID environment variables must be set.")
-        exit(1)
-
+    """Starts the Telegram bot and sets up the command handlers."""
     updater = Updater(TELEGRAM_TOKEN)
     dispatcher = updater.dispatcher
     dispatcher.add_handler(CommandHandler("start", start))
     dispatcher.add_handler(CommandHandler("continue", continue_command))
     updater.start_polling()
     updater.idle()
-
 
 if __name__ == '__main__':
     main()
